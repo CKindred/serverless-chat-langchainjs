@@ -1,13 +1,10 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
 import { AIChatCompletionRequest } from '@microsoft/ai-chat-protocol';
-import { Embeddings } from '@langchain/core/embeddings';
-import { BaseChatModel } from '@langchain/core/language_models/chat_models';
-import { AzureChatOpenAI, AzureOpenAIEmbeddings } from '@langchain/openai';
-import { ChatOllama, OllamaEmbeddings } from '@langchain/ollama';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
-import { ollamaChatModel, ollamaEmbeddingsModel } from '../constants.js';
+import { v4 as uuidv4 } from 'uuid';
 import { badRequest, ok, serviceUnavailable } from '../http-response.js';
-import { getAzureOpenAiTokenProvider, getCredentials, getUserId } from '../security.js';
+import { getUserId } from '../security.js';
+import setupModelsAndResources from '../utils/setup-models-and-resources.js';
 
 const summariseSystemPrompt = `
 System Prompt:
@@ -43,8 +40,6 @@ Use these examples as a template to summarize any detailed text provided to you.
 `;
 
 export async function postSummarise(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
-  const azureOpenAiEndpoint = process.env.AZURE_OPENAI_API_ENDPOINT;
-
   try {
     const requestBody = (await request.json()) as AIChatCompletionRequest;
     const { messages, context: chatContext } = requestBody;
@@ -54,31 +49,10 @@ export async function postSummarise(request: HttpRequest, context: InvocationCon
       return badRequest('Invalid or missing messages in the request body');
     }
 
-    let embeddings: Embeddings;
-    let model: BaseChatModel;
+    const sessionId = ((chatContext as any)?.sessionId as string) || uuidv4();
+    context.log(`userId: ${userId}, sessionId: ${sessionId}`);
 
-    context.log(`userId: ${userId}`);
-
-    if (azureOpenAiEndpoint) {
-      const credentials = getCredentials();
-      const azureADTokenProvider = getAzureOpenAiTokenProvider();
-
-      // Initialise models
-      embeddings = new AzureOpenAIEmbeddings({ azureADTokenProvider });
-      model = new AzureChatOpenAI({
-        // Controls randomness. 0 = deterministic, 1 = maximum randomness
-        temperature: 0.7,
-        azureADTokenProvider,
-      });
-    } else {
-      // If no environment variables are set, it means we are running locally
-      context.log('No Azure OpenAI endpoint set, using Ollama models and local DB');
-      embeddings = new OllamaEmbeddings({ model: ollamaEmbeddingsModel });
-      model = new ChatOllama({
-        temperature: 0.7,
-        model: ollamaChatModel,
-      });
-    }
+    const { model } = await setupModelsAndResources(context, sessionId, userId);
 
     const messagesToSubmit = [new SystemMessage(summariseSystemPrompt), new HumanMessage(messages.at(-1)!.content)];
 

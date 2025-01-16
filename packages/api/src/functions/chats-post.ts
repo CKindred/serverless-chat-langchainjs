@@ -1,22 +1,14 @@
 import { Readable } from 'node:stream';
 import { HttpRequest, InvocationContext, HttpResponseInit, app } from '@azure/functions';
 import { AIChatCompletionRequest, AIChatCompletionDelta } from '@microsoft/ai-chat-protocol';
-import { AzureOpenAIEmbeddings, AzureChatOpenAI } from '@langchain/openai';
-import { Embeddings } from '@langchain/core/embeddings';
-import { AzureCosmsosDBNoSQLChatMessageHistory, AzureCosmosDBNoSQLVectorStore } from '@langchain/azure-cosmosdb';
-import { FileSystemChatMessageHistory } from '@langchain/community/stores/message/file_system';
-import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { RunnableWithMessageHistory } from '@langchain/core/runnables';
-import { VectorStore } from '@langchain/core/vectorstores';
-import { ChatOllama, OllamaEmbeddings } from '@langchain/ollama';
-import { FaissStore } from '@langchain/community/vectorstores/faiss';
 import { ChatPromptTemplate, PromptTemplate } from '@langchain/core/prompts';
 import { createStuffDocumentsChain } from 'langchain/chains/combine_documents';
 import { v4 as uuidv4 } from 'uuid';
 import 'dotenv/config';
 import { badRequest, data, serviceUnavailable } from '../http-response.js';
-import { ollamaChatModel, ollamaEmbeddingsModel, faissStoreFolder } from '../constants.js';
-import { getAzureOpenAiTokenProvider, getCredentials, getUserId } from '../security.js';
+import { getUserId } from '../security.js';
+import setupModelsAndResources from '../utils/setup-models-and-resources.js';
 
 const ragSystemPrompt = `You are an assistant writing a response to a bid document for Kainos, a software consultancy.. Be brief in your answers. Answer only plain text, DO NOT use Markdown.
 Answer ONLY with information from the sources below. If there isn't enough information in the sources, say you don't know. Do not generate answers that don't use the sources. If asking a clarifying question to the user would help, ask the question.
@@ -39,8 +31,6 @@ SOURCES:
 const titleSystemPrompt = `Create a title for this chat session, based on the user question. The title should be less than 32 characters. Do NOT use double-quotes.`;
 
 export async function postChats(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
-  const azureOpenAiEndpoint = process.env.AZURE_OPENAI_API_ENDPOINT;
-
   try {
     const requestBody = (await request.json()) as AIChatCompletionRequest;
     const { messages, context: chatContext } = requestBody;
@@ -50,46 +40,13 @@ export async function postChats(request: HttpRequest, context: InvocationContext
       return badRequest('Invalid or missing messages in the request body');
     }
 
-    let embeddings: Embeddings;
-    let model: BaseChatModel;
-    let store: VectorStore;
-    let chatHistory;
     const sessionId = ((chatContext as any)?.sessionId as string) || uuidv4();
     context.log(`userId: ${userId}, sessionId: ${sessionId}`);
 
-    if (azureOpenAiEndpoint) {
-      const credentials = getCredentials();
-      const azureADTokenProvider = getAzureOpenAiTokenProvider();
+    const { model, store, chatHistory } = await setupModelsAndResources(context, sessionId, userId, true, true);
 
-      // Initialize models and vector database
-      embeddings = new AzureOpenAIEmbeddings({ azureADTokenProvider });
-      model = new AzureChatOpenAI({
-        // Controls randomness. 0 = deterministic, 1 = maximum randomness
-        temperature: 0.7,
-        azureADTokenProvider,
-      });
-      store = new AzureCosmosDBNoSQLVectorStore(embeddings, { credentials });
-
-      // Initialize chat history
-      chatHistory = new AzureCosmsosDBNoSQLChatMessageHistory({
-        sessionId,
-        userId,
-        credentials,
-      });
-    } else {
-      // If no environment variables are set, it means we are running locally
-      context.log('No Azure OpenAI endpoint set, using Ollama models and local DB');
-      embeddings = new OllamaEmbeddings({ model: ollamaEmbeddingsModel });
-      model = new ChatOllama({
-        temperature: 0.7,
-        model: ollamaChatModel,
-      });
-      store = await FaissStore.load(faissStoreFolder, embeddings);
-      chatHistory = new FileSystemChatMessageHistory({
-        sessionId,
-        userId,
-      });
-    }
+    // TODO sort this out
+    if (!chatHistory || !store) throw new Error('Chat history should not be null');
 
     // Create the chain that combines the prompt with the documents
     const ragChain = await createStuffDocumentsChain({
