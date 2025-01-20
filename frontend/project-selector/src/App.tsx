@@ -12,7 +12,7 @@ const BidQuestionForm: React.FC = () => {
     setError(null);
 
     try {
-      const response = await fetch('api/api/identify-projects', {
+      const response = await fetch('api/identify-projects', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
