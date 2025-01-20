@@ -19,7 +19,7 @@ import { getAzureOpenAiTokenProvider, getCredentials, getUserId } from '../secur
 
 const ragSystemPrompt = `You are an assistant writing a response to a bid document for Kainos, a software consultancy. Be brief in your answers. Answer only plain text, DO NOT use Markdown.
 
-I want you to suggest exactly one project that serve as an example of the below bid question. In your answer justify why the project is a good example and reference the documents that you use in your answer.
+I want you to suggest exactly one project that serves as an example of the below bid question. In your answer justify why the project is a good example and reference the documents that you use in your answer.
 
 Answer ONLY with information from the sources below. Do not generate answers that don't use the sources.
 {context}
