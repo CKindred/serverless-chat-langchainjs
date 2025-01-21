@@ -95,7 +95,6 @@ export async function postIdentifyProjects(
     // Create the chain that combines the prompt with the documents
     const ragChain = await createStuffDocumentsChain({
       llm: structuredModel as LanguageModelLike,
-      // Llm: model,
       prompt: ChatPromptTemplate.fromMessages([
         ['system', ragSystemPrompt],
         ['human', '{input}'],
