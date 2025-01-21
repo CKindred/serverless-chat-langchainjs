@@ -9,7 +9,7 @@ import { FileSystemChatMessageHistory } from '@langchain/community/stores/messag
 import { faissStoreFolder, ollamaChatModel, ollamaEmbeddingsModel } from '../constants.js';
 import { getAzureOpenAiTokenProvider, getCredentials } from '../security.js';
 
-export default async function setupModelsAndResources(
+export default async function setupModelAndResources(
   context: InvocationContext,
   sessionId: string,
   userId?: string,

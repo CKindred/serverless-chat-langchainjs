@@ -8,7 +8,7 @@ import { RunnableConfig, RunnablePassthrough, RunnablePick, RunnableSequence } f
 import { Document } from '@langchain/core/documents';
 import { badRequest, ok, serviceUnavailable } from '../http-response.js';
 import { getUserId } from '../security.js';
-import setupModelsAndResources from '../utils/setup-models-and-resources.js';
+import setupModelAndResources from '../utils/setup-model-and-resources.js';
 
 const ragSystemPrompt = `You are an assistant writing a response to a bid document for Kainos, a software consultancy. Be brief in your answers. Answer only plain text, DO NOT use Markdown.
 
@@ -34,7 +34,7 @@ export async function postIdentifyProjects(
     const sessionId = ((chatContext as any)?.sessionId as string) || uuidv4();
     context.log(`userId: ${userId}, sessionId: ${sessionId}`);
 
-    const { model, store } = await setupModelsAndResources(context, sessionId, userId, true);
+    const { model, store } = await setupModelAndResources(context, sessionId, userId, true);
 
     // TODO sort this out
     if (!store) throw new Error('Vector store must not be null');

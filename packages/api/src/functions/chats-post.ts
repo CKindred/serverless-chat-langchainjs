@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import 'dotenv/config';
 import { badRequest, data, serviceUnavailable } from '../http-response.js';
 import { getUserId } from '../security.js';
-import setupModelsAndResources from '../utils/setup-models-and-resources.js';
+import setupModelAndResources from '../utils/setup-model-and-resources.js';
 
 const ragSystemPrompt = `You are an assistant writing a response to a bid document for Kainos, a software consultancy.. Be brief in your answers. Answer only plain text, DO NOT use Markdown.
 Answer ONLY with information from the sources below. If there isn't enough information in the sources, say you don't know. Do not generate answers that don't use the sources. If asking a clarifying question to the user would help, ask the question.
@@ -43,7 +43,7 @@ export async function postChats(request: HttpRequest, context: InvocationContext
     const sessionId = ((chatContext as any)?.sessionId as string) || uuidv4();
     context.log(`userId: ${userId}, sessionId: ${sessionId}`);
 
-    const { model, store, chatHistory } = await setupModelsAndResources(context, sessionId, userId, true, true);
+    const { model, store, chatHistory } = await setupModelAndResources(context, sessionId, userId, true, true);
 
     // TODO sort this out
     if (!chatHistory || !store) throw new Error('Chat history should not be null');

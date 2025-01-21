@@ -4,7 +4,7 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { v4 as uuidv4 } from 'uuid';
 import { badRequest, ok, serviceUnavailable } from '../http-response.js';
 import { getUserId } from '../security.js';
-import setupModelsAndResources from '../utils/setup-models-and-resources.js';
+import setupModelAndResources from '../utils/setup-model-and-resources.js';
 
 const summariseSystemPrompt = `
 System Prompt:
@@ -52,7 +52,7 @@ export async function postSummarise(request: HttpRequest, context: InvocationCon
     const sessionId = ((chatContext as any)?.sessionId as string) || uuidv4();
     context.log(`userId: ${userId}, sessionId: ${sessionId}`);
 
-    const { model } = await setupModelsAndResources(context, sessionId, userId);
+    const { model } = await setupModelAndResources(context, sessionId, userId);
 
     const messagesToSubmit = [new SystemMessage(summariseSystemPrompt), new HumanMessage(messages.at(-1)!.content)];
 
