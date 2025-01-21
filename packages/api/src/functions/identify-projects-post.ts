@@ -5,18 +5,21 @@ import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { VectorStore } from '@langchain/core/vectorstores';
 import { v4 as uuidv4 } from 'uuid';
 import { AzureChatOpenAI, AzureOpenAIEmbeddings } from '@langchain/openai';
-import { AzureCosmosDBNoSQLVectorStore, AzureCosmsosDBNoSQLChatMessageHistory } from '@langchain/azure-cosmosdb';
+import { AzureCosmosDBNoSQLVectorStore } from '@langchain/azure-cosmosdb';
 import { ChatOllama, OllamaEmbeddings } from '@langchain/ollama';
 import { FaissStore } from '@langchain/community/vectorstores/faiss';
-import { createStuffDocumentsChain } from 'langchain/chains/combine_documents';
-import { ChatPromptTemplate, PromptTemplate } from '@langchain/core/prompts';
+import { BasePromptTemplate, ChatPromptTemplate, PromptTemplate } from '@langchain/core/prompts';
+import { LanguageModelLike } from '@langchain/core/dist/language_models/base';
+import { RunnableConfig, RunnablePassthrough, RunnablePick, RunnableSequence } from '@langchain/core/runnables';
+import { Document } from '@langchain/core/documents';
+import { BaseOutputParser } from '@langchain/core/output_parsers';
 import { faissStoreFolder, ollamaChatModel, ollamaEmbeddingsModel } from '../constants.js';
 import { badRequest, ok, serviceUnavailable } from '../http-response.js';
 import { getAzureOpenAiTokenProvider, getCredentials, getUserId } from '../security.js';
 
 const ragSystemPrompt = `You are an assistant writing a response to a bid document for Kainos, a software consultancy. Be brief in your answers. Answer only plain text, DO NOT use Markdown.
 
-I want you to suggest project(s) that serve as examples of the below bid question. In your answer justify why each project is a good example and reference the documents that you use in your answer.
+I want you to suggest one or more projects that serve as examples of the below bid question. In your answer justify why the projects are a good examples and reference the documents that you use in your answer.
 
 Answer ONLY with information from the sources below. Do not generate answers that don't use the sources.
 {context}
@@ -65,15 +68,40 @@ export async function postIdentifyProjects(
       store = await FaissStore.load(faissStoreFolder, embeddings);
     }
 
+    const structuredModel = model.withStructuredOutput({
+      name: 'projectsInfo',
+      description: 'Information about one or more corporate projects',
+      parameters: {
+        title: 'Projects',
+        type: 'object',
+        properties: {
+          projects: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string', description: 'The name of the project' },
+                description: { type: 'string', description: 'A brief description of the project' },
+                justification: { type: 'string', description: 'Justification of why the project is a good example' },
+              },
+              required: ['name', 'description'],
+            },
+          },
+        },
+        required: ['projects'],
+      },
+    });
+
     // Create the chain that combines the prompt with the documents
     const ragChain = await createStuffDocumentsChain({
-      llm: model,
+      llm: structuredModel as LanguageModelLike,
       prompt: ChatPromptTemplate.fromMessages([
         ['system', ragSystemPrompt],
         ['human', '{input}'],
       ]),
       documentPrompt: PromptTemplate.fromTemplate('[{source}]: {page_content}\n'),
     });
+
     // Retriever to search for the documents in the database
     const retriever = store.asRetriever(3);
     const question = messages.at(-1)!.content;
@@ -86,15 +114,76 @@ export async function postIdentifyProjects(
       { configurable: { sessionId } },
     );
 
-    context.log(JSON.stringify(response));
+    context.log(`response: ${JSON.stringify(response)}`);
     return ok({ response });
   } catch (_error: unknown) {
     const error = _error as Error;
-    context.error(`Error when processing identify-projects-post request: ${error.message}`);
+    context.error(`Error when processing identify-projects-post request: ${error.stack}`);
 
     return serviceUnavailable('Service temporarily unavailable. Please try again later.');
   }
 }
+
+// Copied the library code here because I had to get rid of the outputParser as that was interfering with the structured output
+export async function createStuffDocumentsChain<RunOutput = string>({
+  llm,
+  prompt,
+  documentPrompt = PromptTemplate.fromTemplate('{page_content}'),
+  documentSeparator = '\n\n',
+}: {
+  llm: LanguageModelLike;
+  prompt: BasePromptTemplate;
+  outputParser?: BaseOutputParser<RunOutput>;
+  documentPrompt?: BasePromptTemplate;
+  documentSeparator?: string;
+}) {
+  if (!prompt.inputVariables.includes('context')) {
+    throw new Error(`Prompt must include a "context" variable`);
+  }
+
+  return RunnableSequence.from(
+    [
+      RunnablePassthrough.assign({
+        context: new RunnablePick('context').pipe(async (documents, config) =>
+          formatDocuments({
+            documents,
+            documentPrompt,
+            documentSeparator,
+            config,
+          }),
+        ),
+      }),
+      prompt,
+      llm,
+    ],
+    'stuff_documents_chain',
+  );
+}
+
+const formatDocuments = async ({
+  documentPrompt,
+  documentSeparator,
+  documents,
+  config,
+}: {
+  documentPrompt: BasePromptTemplate;
+  documentSeparator: string;
+  documents: Document[];
+  config?: RunnableConfig;
+}) => {
+  if (documents === null || documents.length === 0) {
+    return '';
+  }
+
+  const formattedDocuments = await Promise.all(
+    documents.map(async (document) =>
+      documentPrompt
+        .withConfig({ runName: 'document_formatter' })
+        .invoke({ ...document.metadata, page_content: document.pageContent }, config),
+    ),
+  );
+  return formattedDocuments.join(documentSeparator);
+};
 
 app.setup({ enableHttpStream: true });
 app.http('identify-projects-post', {
