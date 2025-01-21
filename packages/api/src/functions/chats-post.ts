@@ -45,7 +45,6 @@ export async function postChats(request: HttpRequest, context: InvocationContext
 
     const { model, store, chatHistory } = await setupModelAndResources(context, sessionId, userId, true, true);
 
-    // TODO sort this out
     if (!chatHistory || !store) throw new Error('Chat history should not be null');
 
     // Create the chain that combines the prompt with the documents

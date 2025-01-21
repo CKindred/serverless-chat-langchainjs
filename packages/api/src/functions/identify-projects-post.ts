@@ -36,7 +36,6 @@ export async function postIdentifyProjects(
 
     const { model, store } = await setupModelAndResources(context, sessionId, userId, true);
 
-    // TODO sort this out
     if (!store) throw new Error('Vector store must not be null');
 
     const structuredModel = model.withStructuredOutput({
@@ -76,7 +75,6 @@ export async function postIdentifyProjects(
     // Retriever to search for the documents in the database
     const retriever = store.asRetriever(3);
     const question = messages.at(-1)!.content;
-    // TODO stream response
     const response = await ragChain.invoke(
       {
         input: question,
